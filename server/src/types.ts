@@ -384,6 +384,10 @@ export type JobItem =
   | { name: JobName.OcrQueueAll; data: IBaseJob }
   | { name: JobName.Ocr; data: IEntityJob }
 
+  // Classification
+  | { name: JobName.ClassificationQueueAll; data: IBaseJob }
+  | { name: JobName.Classification; data: IEntityJob }
+
   // Workflow
   | { name: JobName.WorkflowRun; data: IWorkflowJob }
 

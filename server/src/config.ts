@@ -81,6 +81,13 @@ export type SystemConfig = {
       minRecognitionScore: number;
       maxResolution: number;
     };
+    classification: {
+      enabled: boolean;
+      modelName: string;
+      minScore: number;
+      maxResults: number;
+      categories: string[];
+    };
   };
   map: {
     enabled: boolean;
@@ -235,6 +242,7 @@ export const defaults = Object.freeze<SystemConfig>({
     [QueueName.VideoConversion]: { concurrency: 1 },
     [QueueName.Notification]: { concurrency: 5 },
     [QueueName.Ocr]: { concurrency: 1 },
+    [QueueName.Classification]: { concurrency: 1 },
     [QueueName.Workflow]: { concurrency: 5 },
     [QueueName.Editor]: { concurrency: 2 },
   },
@@ -271,6 +279,20 @@ export const defaults = Object.freeze<SystemConfig>({
       minDetectionScore: 0.5,
       minRecognitionScore: 0.8,
       maxResolution: 736,
+    },
+    classification: {
+      enabled: true,
+      modelName: 'ViT-B-32__openai',
+      minScore: 0.15,
+      maxResults: 5,
+      categories: [
+        'landscape', 'portrait', 'food', 'animal', 'architecture',
+        'beach', 'night', 'city', 'nature', 'sport',
+        'flower', 'sunset', 'mountain', 'water', 'forest',
+        'indoor', 'outdoor', 'street', 'garden', 'snow',
+        'car', 'document', 'selfie', 'group photo', 'pet',
+        'wedding', 'birthday', 'travel', 'art', 'abstract',
+      ],
     },
   },
   map: {

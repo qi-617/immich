@@ -76,6 +76,7 @@ describe(QueueService.name, () => {
         [QueueName.Notification]: expected,
         [QueueName.BackupDatabase]: expected,
         [QueueName.Ocr]: expected,
+        [QueueName.Classification]: expected,
         [QueueName.Workflow]: expected,
         [QueueName.Editor]: expected,
       });

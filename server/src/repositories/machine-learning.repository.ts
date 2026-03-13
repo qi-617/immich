@@ -74,6 +74,10 @@ export interface Face {
 
 export type FacialRecognitionResponse = { [ModelTask.FACIAL_RECOGNITION]: Face[] } & VisualResponse;
 export type DetectedFaces = { faces: Face[] } & VisualResponse;
+export type ClassificationResult = { categoryName: string; confidence: number };
+export type ClassificationResponse = { classification: ClassificationResult[] };
+export type ClassificationOptions = { modelName: string; minScore: number; maxResults: number; categories: string[] };
+
 export type MachineLearningRequest = ClipVisualRequest | ClipTextualRequest | FacialRecognitionRequest | OcrRequest;
 export type TextEncodingOptions = ModelOptions & { language?: string };
 
@@ -161,34 +165,37 @@ export class MachineLearningRepository {
     return this.healthyMap[url];
   }
 
-  private async predict<T>(payload: ModelPayload, config: MachineLearningRequest): Promise<T> {
-    const formData = await this.getFormData(payload, config);
-
+  private async postWithFailover<T>(endpoint: string, formData: FormData, label: string): Promise<T> {
     for (const url of [
       // try healthy servers first
       ...this.config.urls.filter((url) => this.isHealthy(url)),
       ...this.config.urls.filter((url) => !this.isHealthy(url)),
     ]) {
       try {
-        const response = await fetch(new URL('/predict', url), { method: 'POST', body: formData });
+        const response = await fetch(new URL(endpoint, url), { method: 'POST', body: formData });
         if (response.ok) {
           this.setHealthy(url, true);
           return response.json();
         }
 
         this.logger.warn(
-          `Machine learning request to "${url}" failed with status ${response.status}: ${response.statusText}`,
+          `Machine learning ${label} request to "${url}" failed with status ${response.status}: ${response.statusText}`,
         );
       } catch (error: Error | unknown) {
         this.logger.warn(
-          `Machine learning request to "${url}" failed: ${error instanceof Error ? error.message : error}`,
+          `Machine learning ${label} request to "${url}" failed: ${error instanceof Error ? error.message : error}`,
         );
       }
 
       this.setHealthy(url, false);
     }
 
-    throw new Error(`Machine learning request '${JSON.stringify(config)}' failed for all URLs`);
+    throw new Error(`Machine learning ${label} request failed for all URLs`);
+  }
+
+  private async predict<T>(payload: ModelPayload, config: MachineLearningRequest): Promise<T> {
+    const formData = await this.getFormData(payload, config);
+    return this.postWithFailover<T>('/predict', formData, 'predict');
   }
 
   async detectFaces(imagePath: string, { modelName, minScore }: FaceDetectionOptions) {
@@ -227,6 +234,22 @@ export class MachineLearningRepository {
     };
     const response = await this.predict<OcrResponse>({ imagePath }, request);
     return response[ModelTask.OCR];
+  }
+
+  async classifyImage(
+    imagePath: string,
+    { modelName, minScore, maxResults, categories }: ClassificationOptions,
+  ): Promise<ClassificationResult[]> {
+    const fileBuffer = await readFile(imagePath);
+    const formData = new FormData();
+    formData.append('image', new Blob([new Uint8Array(fileBuffer)]));
+    formData.append('model_name', modelName);
+    formData.append('categories', JSON.stringify(categories));
+    formData.append('min_score', String(minScore));
+    formData.append('max_results', String(maxResults));
+
+    const data = await this.postWithFailover<ClassificationResponse>('/classify', formData, 'classify');
+    return data.classification;
   }
 
   private async getFormData(payload: ModelPayload, config: MachineLearningRequest): Promise<FormData> {

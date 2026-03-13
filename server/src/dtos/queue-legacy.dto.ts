@@ -69,6 +69,9 @@ export class QueuesResponseLegacyDto implements Record<QueueName, QueueResponseL
   [QueueName.Ocr]!: QueueResponseLegacyDto;
 
   @ApiProperty({ type: QueueResponseLegacyDto })
+  [QueueName.Classification]!: QueueResponseLegacyDto;
+
+  @ApiProperty({ type: QueueResponseLegacyDto })
   [QueueName.Workflow]!: QueueResponseLegacyDto;
 
   @ApiProperty({ type: QueueResponseLegacyDto })

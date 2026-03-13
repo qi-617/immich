@@ -7,6 +7,7 @@ import { AppRepository } from 'src/repositories/app.repository';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
+import { CategoryRepository } from 'src/repositories/category.repository';
 import { AuditRepository } from 'src/repositories/audit.repository';
 import { ConfigRepository } from 'src/repositories/config.repository';
 import { CronRepository } from 'src/repositories/cron.repository';
@@ -62,6 +63,7 @@ export const repositories = [
   AssetRepository,
   AssetEditRepository,
   AssetJobRepository,
+  CategoryRepository,
   ConfigRepository,
   CronRepository,
   CryptoRepository,
