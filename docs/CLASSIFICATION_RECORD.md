@@ -351,19 +351,267 @@ CategorySummaryResponseDto  // categoryName, count (审查修正: number 类型,
 
 ---
 
-### 待完成阶段
+---
 
-| Phase | 内容 | 状态 |
-|-------|------|------|
-| Phase 6 | OpenAPI + SQL 重新生成 | ⏳ 需在完整开发环境执行 `make open-api && make sql` |
-| Phase 7 | Web 前端 — 详情面板分类组件 | ⏳ |
-| Phase 8 | Web 前端 — 探索页面分类板块 | ⏳ |
-| Phase 9 | i18n 翻译键 | ⏳ |
-| Phase 10 | 单元测试 | ⏳ |
+## Phase 6 & Phase 7 & Phase 8 & Phase 9 & Phase 10 代码变更总结
 
 ---
 
-## Phase 11: 本地联动测试闭环验证记录（2026-03-13）
+### Phase 6: OpenAPI + SQL 重新生成
+
+#### 执行结果
+
+- `make open-api` ✅ 成功执行，自动生成 TypeScript SDK 和 Dart SDK
+- `make sql` ⚠️ worktree 环境中 `nest build` 缺少 `@nestjs/cli`，需在完整开发环境执行
+
+#### 自动生成的 SDK 函数
+
+**文件**: `open-api/typescript-sdk/src/fetch-client.ts`
+
+| 函数 | HTTP 方法 | 路径 | 说明 |
+|------|-----------|------|------|
+| `getAssetCategories({ id })` | GET | `/categories/asset/{id}` | 获取单个资产的分类结果 |
+| `getCategorySummaries()` | GET | `/categories` | 获取用户所有分类汇总 |
+
+自动生成的 DTO 类型：
+- `AssetCategoryResponseDto` — `{ id, assetId, categoryName, confidence }`
+- `CategorySummaryResponseDto` — `{ categoryName, count }`
+
+---
+
+### Phase 7: Web 前端 — 详情面板分类组件
+
+#### 7a. 新建分类组件
+
+**新文件**: `web/src/lib/components/asset-viewer/detail-panel-categories.svelte`
+
+参照 `detail-panel-tags.svelte` 模式，实现资产详情侧边栏的分类标签展示。
+
+##### 核心设计
+
+| 方面 | 实现 | 说明 |
+|------|------|------|
+| 数据获取 | `$effect` + 取消模式 | 防止资产快速切换时的竞态条件 |
+| 类型 | `AssetCategoryResponseDto[]` | 使用 SDK 自动生成的类型，而非内联类型 |
+| 权限 | `!authManager.isSharedLink` 守卫 | 共享链接下不展示分类（与 tags 行为一致） |
+| 暗黑模式 | `dark:bg-immich-dark-bg dark:text-immich-dark-fg` | 组件自管 section 包装器 |
+| 底部间距 | `pb-12` | 作为面板最后一个区块，需要底部留白 |
+
+##### 关键代码模式 — `$effect` 竞态取消
+
+```svelte
+$effect(() => {
+  const assetId = asset.id;
+  let cancelled = false;
+
+  getAssetCategories({ id: assetId })
+    .then((result) => { if (!cancelled) categories = result; })
+    .catch(() => { if (!cancelled) categories = []; });
+
+  return () => { cancelled = true; };
+});
+```
+
+这比 `async` 函数直接在 `$effect` 中使用更安全——当 `asset.id` 变化时，上一次请求的回调会被 `cancelled` 标志丢弃。
+
+##### 展示形式
+
+每个分类以 `Badge` + `Link` 形式展示，点击跳转到智能搜索：
+```
+[landscape 85%] [nature 72%] [outdoor 45%]
+```
+
+#### 7b. 嵌入详情面板
+
+**修改文件**: `web/src/lib/components/asset-viewer/detail-panel.svelte`
+
+- 导入 `DetailPanelCategories` 组件
+- 在 tags 区块之后直接渲染 `<DetailPanelCategories {asset} />`（无额外包装器，组件自管 `<section>`）
+
+---
+
+### Phase 8: Web 前端 — 探索页面分类板块
+
+#### 8a. CategoryRepository 新增 `getTopCategoriesWithAsset`
+
+**修改文件**: `server/src/repositories/category.repository.ts`
+
+新增方法用于 Explore 页面获取代表性分类缩略图：
+
+```typescript
+@GenerateSql({ params: [DummyValue.UUID, { maxFields: 12, minAssetsPerField: 5 }] })
+async getTopCategoriesWithAsset(userId, options)
+```
+
+##### 查询设计（CTE + DISTINCT ON）
+
+```sql
+WITH top_cats AS (
+  -- 步骤1: 筛选有足够资产的分类（HAVING count >= minAssetsPerField）
+  SELECT categoryName FROM asset_categories
+  INNER JOIN asset ON ...
+  WHERE ownerId = ? AND visibility = 'timeline' AND deletedAt IS NULL
+  GROUP BY categoryName
+  HAVING count(id) >= 5
+)
+-- 步骤2: 每个分类取置信度最高的图片资产作为缩略图
+SELECT DISTINCT ON (categoryName) assetId AS data, categoryName AS value
+FROM asset_categories
+INNER JOIN asset ON ...
+INNER JOIN top_cats ON ...
+WHERE type = 'IMAGE'  -- 只取图片（不用视频做缩略图）
+ORDER BY categoryName, confidence DESC
+LIMIT 12
+```
+
+关键过滤条件（经架构审查优化）：
+- `visibility = AssetVisibility.Timeline`（而非 `!= Hidden`，排除 `archive` 和 `locked`）
+- `type = AssetType.Image`（确保缩略图是图片而非视频）
+
+#### 8b. SearchService `getExploreData()` 重写
+
+**修改文件**: `server/src/services/search.service.ts`
+
+将原来的串行获取城市数据改为并行获取城市 + 分类：
+
+```typescript
+const [cities, categories] = await Promise.all([
+  this.assetRepository.getAssetIdByCity(auth.user.id, options),
+  this.categoryRepository.getTopCategoriesWithAsset(auth.user.id, options).catch((error) => {
+    this.logger.warn(`Failed to get categories for explore page: ${error}`);
+    return emptyResult;  // 优雅降级：分类查询失败不影响城市展示
+  }),
+]);
+```
+
+资产批量获取优化：
+- 合并城市 + 分类的 assetId 列表
+- `new Set()` 去重
+- `new Map()` O(1) 查找
+- 单次 `getByIdsWithAllRelationsButStacks()` 调用
+
+#### 8c. Explore 页面 UI
+
+**修改文件**: `web/src/routes/(user)/explore/+page.svelte`
+
+1. 新增 `categories` 派生状态：`$derived(getFieldItems(data.items, 'category'))`
+2. 在 Places 区块后添加 Categories 网格区块（复用 Places 完全相同的 HTML 结构）
+3. 分类项链接到 `Route.search({ query: item.value })`（智能搜索）
+4. 空状态判断更新：`!hasPeople && places.length === 0 && categories.length === 0`
+
+#### 8d. 单元测试更新
+
+**修改文件**: `server/src/services/search.service.spec.ts`
+
+新增 3 个测试用例：
+
+| 测试 | 说明 |
+|------|------|
+| `should get assets by city without categories` | 分类为空时只返回城市 |
+| `should include categories when available` | 城市 + 分类同时存在的正常场景 |
+| `should gracefully handle category query failure` | 分类查询抛异常时优雅降级，仍返回城市 |
+
+---
+
+### Phase 9: i18n 翻译键
+
+**修改文件**: `i18n/en.json`
+
+按字母序在 `"cast_description"` 和 `"change_date"` 之间插入：
+```json
+"categories": "Categories"
+```
+
+---
+
+### Phase 10: ClassificationService 单元测试
+
+**新建文件**: `server/src/services/classification.service.spec.ts`
+
+完全对标 `ocr.service.spec.ts` 的测试模式，使用 `newTestService()` + `ServiceMocks` 框架。
+
+#### 测试用例清单
+
+##### `handleQueueClassification`
+
+| 测试 | 预期结果 | 验证重点 |
+|------|----------|----------|
+| ML 全局禁用 | `JobStatus.Skipped` | `streamForClassificationJob` 未被调用 |
+| classification 单独禁用 | `JobStatus.Skipped` | 同上 |
+| 正常入队（非强制） | `JobStatus.Success` | `streamForClassificationJob(false)` + 正确的 job payload |
+| 强制重跑 | `JobStatus.Success` | `deleteAll()` 被调用 + `streamForClassificationJob(true)` |
+
+##### `handleClassification`
+
+| 测试 | 预期结果 | 验证重点 |
+|------|----------|----------|
+| ML 禁用 | `JobStatus.Skipped` | `classifyImage` + `upsert` 均未调用 |
+| 资产不存在 | `JobStatus.Failed` | 同上 |
+| 资产无预览图 | `JobStatus.Failed` | 同上 |
+| Hidden 资产 | `JobStatus.Skipped` | 同上 |
+| 正常分类 | `JobStatus.Success` | ML 参数正确、upsert 数据正确、jobStatus 更新 |
+| 自定义配置 | `JobStatus.Success` | 配置项（modelName/minScore/maxResults/categories）透传到 ML |
+| 空分类结果 | `JobStatus.Success` | 空数组 upsert + jobStatus 更新（不报错） |
+
+---
+
+### 审查优化记录（Phase 6-10）
+
+代码完成后进行了两轮架构级审查，共修复以下问题：
+
+#### 第一轮审查
+
+| # | 问题 | 严重度 | 修复 |
+|---|------|--------|------|
+| 1 | `$effect` 内使用 `async` 函数，资产快速切换时存在竞态条件 | P0/Bug | 改用 `cancelled` 标志 + cleanup 函数模式 |
+| 2 | 内联类型 `Array<{id, categoryName, confidence}>` 而非使用 SDK 类型 | P0/Design | 改用 `AssetCategoryResponseDto[]` |
+| 3 | `getTopCategoriesWithAsset` 使用 `visibility != Hidden` | P0/Bug | 改为 `= Timeline`（排除 archive/locked） |
+| 4 | 缩略图可能是视频 | P0/UX | 添加 `type = AssetType.Image` 过滤 |
+| 5 | 分类查询失败导致 500 | P1/Robustness | 添加 `.catch()` + `logger.warn` 优雅降级 |
+| 6 | 共享链接下泄露分类信息 | P2/Security | 添加 `!authManager.isSharedLink` 守卫 |
+
+#### 第二轮审查
+
+| # | 问题 | 严重度 | 修复 |
+|---|------|--------|------|
+| 1 | detail-panel.svelte 有多余的 `<section>` 包装器 | P1/Pattern | 移除，让组件自管 section |
+| 2 | 组件缺少暗黑模式样式和底部间距 | P1/UI | 添加 `dark:bg-immich-dark-bg dark:text-immich-dark-fg` + `pb-12` |
+| 3 | 测试描述不准确、缺少正向测试 | P2/Testing | 更新描述 + 添加含分类的正向用例 + 降级测试 |
+
+---
+
+### 新建文件清单（Phase 6-10）
+
+| 文件 | 说明 |
+|------|------|
+| `web/src/lib/components/asset-viewer/detail-panel-categories.svelte` | 分类标签前端组件 |
+| `server/src/services/classification.service.spec.ts` | 分类服务单元测试 |
+
+### 修改文件清单（Phase 6-10）
+
+| 文件 | 修改内容 |
+|------|----------|
+| `open-api/typescript-sdk/src/fetch-client.ts` | 自动生成 `getAssetCategories()` + `getCategorySummaries()` + DTO 类型 |
+| `web/src/lib/components/asset-viewer/detail-panel.svelte` | +导入 + 渲染 `DetailPanelCategories` |
+| `server/src/repositories/category.repository.ts` | +`getTopCategoriesWithAsset()` 方法 |
+| `server/src/services/search.service.ts` | 重写 `getExploreData()` 并行获取城市+分类 |
+| `web/src/routes/(user)/explore/+page.svelte` | +categories 派生状态 + Categories 网格区块 |
+| `server/src/services/search.service.spec.ts` | +3 个分类相关测试用例 |
+| `i18n/en.json` | +`"categories": "Categories"` |
+
+### 测试状态（Phase 6-10）
+
+| 项目 | 结果 |
+|------|------|
+| OpenAPI 规范生成 | ✅ `make open-api` 成功 |
+| SQL 查询生成 | ⚠️ worktree 环境中 `nest build` 不可用，需完整环境 |
+| 单元测试运行 | ⚠️ `pnpm install` OOM（Node 24.4.0 已知问题），需在完整开发环境中运行 |
+| 代码结构审查 | ✅ 两轮架构审查，共修复 9 项问题 |
+
+---
+# 测试记录
+
+## Phase 1～5: 本地联动测试闭环验证记录（2026-03-13）
 
 ### 测试目标
 
@@ -401,3 +649,14 @@ CategorySummaryResponseDto  // categoryName, count (审查修正: number 类型,
 ### 结论
 
 本次本地联动测试已确认分类闭环正常：新上传资产可自动触发分类任务，结果可写入 `asset_categories`，并正确回填 `asset_job_status.classifiedAt`，同时可通过分类 API 正常读取。
+
+## phase6~8 前端测试
+
+### 修复项：`QueueName.Classification` 映射缺失
+- **修改文件**: `web/src/lib/components/admin-settings/JobSettings.svelte`
+- **问题现象**: `check:svelte` 报错，`queueTitles: Record<QueueName, string>` 缺少 `QueueName.Classification` 属性
+- **修复内容**: 在 `queueTitles` 中新增：`[QueueName.Classification]: $t('categories')`
+
+### 验证结果
+- **命令**: `pnpm --filter immich-web run check:svelte`
+- **结果**: ✅ `svelte-check found 0 errors and 0 warnings`
