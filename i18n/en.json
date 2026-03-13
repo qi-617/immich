@@ -729,6 +729,7 @@
   "cannot_update_the_description": "Cannot update the description",
   "cast": "Cast",
   "cast_description": "Configure available cast destinations",
+  "categories": "Categories",
   "change_date": "Change date",
   "change_description": "Change description",
   "change_display_order": "Change display order",

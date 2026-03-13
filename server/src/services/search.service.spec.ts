@@ -64,7 +64,7 @@ describe(SearchService.name, () => {
   });
 
   describe('getExploreData', () => {
-    it('should get assets by city and tag', async () => {
+    it('should get assets by city without categories', async () => {
       const auth = AuthFactory.create();
       const asset = AssetFactory.from()
         .exif({ latitude: 42, longitude: 69, city: 'city', state: 'state', country: 'country' })
@@ -73,12 +73,59 @@ describe(SearchService.name, () => {
         fieldName: 'exifInfo.city',
         items: [{ value: 'city', data: asset.id }],
       });
+      mocks.category.getTopCategoriesWithAsset.mockResolvedValue({
+        fieldName: 'category',
+        items: [],
+      });
       mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([asset as never]);
       const expectedResponse = [{ fieldName: 'exifInfo.city', items: [{ value: 'city', data: mapAsset(asset) }] }];
 
       const result = await sut.getExploreData(auth);
 
       expect(result).toEqual(expectedResponse);
+    });
+
+    it('should include categories when available', async () => {
+      const auth = AuthFactory.create();
+      const cityAsset = AssetFactory.from()
+        .exif({ latitude: 42, longitude: 69, city: 'city', state: 'state', country: 'country' })
+        .build();
+      const catAsset = AssetFactory.from().build();
+      mocks.asset.getAssetIdByCity.mockResolvedValue({
+        fieldName: 'exifInfo.city',
+        items: [{ value: 'city', data: cityAsset.id }],
+      });
+      mocks.category.getTopCategoriesWithAsset.mockResolvedValue({
+        fieldName: 'category',
+        items: [{ value: 'landscape', data: catAsset.id }],
+      });
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([cityAsset as never, catAsset as never]);
+
+      const result = await sut.getExploreData(auth);
+
+      expect(result).toEqual([
+        { fieldName: 'exifInfo.city', items: [{ value: 'city', data: mapAsset(cityAsset) }] },
+        { fieldName: 'category', items: [{ value: 'landscape', data: mapAsset(catAsset) }] },
+      ]);
+    });
+
+    it('should gracefully handle category query failure', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.from()
+        .exif({ latitude: 42, longitude: 69, city: 'city', state: 'state', country: 'country' })
+        .build();
+      mocks.asset.getAssetIdByCity.mockResolvedValue({
+        fieldName: 'exifInfo.city',
+        items: [{ value: 'city', data: asset.id }],
+      });
+      mocks.category.getTopCategoriesWithAsset.mockRejectedValue(new Error('table does not exist'));
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([asset as never]);
+
+      const result = await sut.getExploreData(auth);
+
+      expect(result).toEqual([
+        { fieldName: 'exifInfo.city', items: [{ value: 'city', data: mapAsset(asset) }] },
+      ]);
     });
   });
 

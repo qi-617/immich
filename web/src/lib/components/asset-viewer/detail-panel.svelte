@@ -3,6 +3,7 @@
   import DetailPanelDescription from '$lib/components/asset-viewer/detail-panel-description.svelte';
   import DetailPanelLocation from '$lib/components/asset-viewer/detail-panel-location.svelte';
   import DetailPanelRating from '$lib/components/asset-viewer/detail-panel-star-rating.svelte';
+  import DetailPanelCategories from '$lib/components/asset-viewer/detail-panel-categories.svelte';
   import DetailPanelTags from '$lib/components/asset-viewer/detail-panel-tags.svelte';
   import { timeToLoadTheMap } from '$lib/constants';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -569,6 +570,8 @@
     <DetailPanelTags {asset} {isOwner} />
   </section>
 {/if}
+
+<DetailPanelCategories {asset} />
 
 {#if showEditFaces}
   <PersonSidePanel
