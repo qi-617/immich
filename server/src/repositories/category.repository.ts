@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators';
-import { AssetVisibility } from 'src/enum';
+import { AssetType, AssetVisibility } from 'src/enum';
 import { DB } from 'src/schema';
 import { AssetCategoryTable } from 'src/schema/tables/asset-category.table';
 
@@ -48,6 +48,37 @@ export class CategoryRepository {
         await trx.insertInto('asset_categories').values(categories).execute();
       }
     });
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, { maxFields: 12, minAssetsPerField: 5 }] })
+  async getTopCategoriesWithAsset(userId: string, options: { maxFields: number; minAssetsPerField: number }) {
+    const items = await this.db
+      .with('top_cats', (qb) =>
+        qb
+          .selectFrom('asset_categories')
+          .innerJoin('asset', 'asset.id', 'asset_categories.assetId')
+          .select('asset_categories.categoryName')
+          .where('asset.ownerId', '=', userId)
+          .where('asset.deletedAt', 'is', null)
+          .where('asset.visibility', '=', AssetVisibility.Timeline)
+          .groupBy('asset_categories.categoryName')
+          .having((eb) => eb.fn('count', [eb.ref('asset_categories.id')]), '>=', options.minAssetsPerField),
+      )
+      .selectFrom('asset_categories')
+      .innerJoin('asset', 'asset.id', 'asset_categories.assetId')
+      .innerJoin('top_cats', 'top_cats.categoryName', 'asset_categories.categoryName')
+      .distinctOn('asset_categories.categoryName')
+      .select(['asset_categories.assetId as data', 'asset_categories.categoryName as value'])
+      .where('asset.ownerId', '=', userId)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', '=', AssetVisibility.Timeline)
+      .where('asset.type', '=', AssetType.Image)
+      .orderBy('asset_categories.categoryName')
+      .orderBy('asset_categories.confidence', 'desc')
+      .limit(options.maxFields)
+      .execute();
+
+    return { fieldName: 'category', items };
   }
 
   deleteAll() {

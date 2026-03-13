@@ -40,10 +40,36 @@ export class SearchService extends BaseService {
 
   async getExploreData(auth: AuthDto) {
     const options = { maxFields: 12, minAssetsPerField: 5 };
-    const cities = await this.assetRepository.getAssetIdByCity(auth.user.id, options);
-    const assets = await this.assetRepository.getByIdsWithAllRelationsButStacks(cities.items.map(({ data }) => data));
-    const items = assets.map((asset) => ({ value: asset.exifInfo!.city!, data: mapAsset(asset, { auth }) }));
-    return [{ fieldName: cities.fieldName, items }];
+    const emptyResult = { fieldName: 'category' as const, items: [] as { value: string; data: string }[] };
+
+    const [cities, categories] = await Promise.all([
+      this.assetRepository.getAssetIdByCity(auth.user.id, options),
+      this.categoryRepository.getTopCategoriesWithAsset(auth.user.id, options).catch((error) => {
+        this.logger.warn(`Failed to get categories for explore page: ${error}`);
+        return emptyResult;
+      }),
+    ]);
+
+    const allAssetIds = [...cities.items.map(({ data }) => data), ...categories.items.map(({ data }) => data)];
+    const uniqueAssetIds = [...new Set(allAssetIds)];
+    const assets = await this.assetRepository.getByIdsWithAllRelationsButStacks(uniqueAssetIds);
+    const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
+
+    const cityItems = cities.items
+      .filter(({ data }) => assetMap.has(data))
+      .map(({ value, data }) => ({ value, data: mapAsset(assetMap.get(data)!, { auth }) }));
+
+    const result = [{ fieldName: cities.fieldName, items: cityItems }];
+
+    const categoryItems = categories.items
+      .filter(({ data }) => assetMap.has(data))
+      .map(({ value, data }) => ({ value, data: mapAsset(assetMap.get(data)!, { auth }) }));
+
+    if (categoryItems.length > 0) {
+      result.push({ fieldName: categories.fieldName, items: categoryItems });
+    }
+
+    return result;
   }
 
   async searchMetadata(auth: AuthDto, dto: MetadataSearchDto): Promise<SearchResponseDto> {

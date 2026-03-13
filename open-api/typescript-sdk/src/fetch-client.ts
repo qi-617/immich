@@ -1130,6 +1130,16 @@ export type ValidateAccessTokenResponseDto = {
     /** Authentication status */
     authStatus: boolean;
 };
+export type CategorySummaryResponseDto = {
+    categoryName: string;
+    count: number;
+};
+export type AssetCategoryResponseDto = {
+    assetId: string;
+    categoryName: string;
+    confidence: number;
+    id: string;
+};
 export type DownloadArchiveDto = {
     /** Asset IDs */
     assetIds: string[];
@@ -1255,6 +1265,7 @@ export type QueueResponseLegacyDto = {
 export type QueuesResponseLegacyDto = {
     backgroundTask: QueueResponseLegacyDto;
     backupDatabase: QueueResponseLegacyDto;
+    classification: QueueResponseLegacyDto;
     duplicateDetection: QueueResponseLegacyDto;
     editor: QueueResponseLegacyDto;
     faceDetection: QueueResponseLegacyDto;
@@ -2474,6 +2485,7 @@ export type JobSettingsDto = {
 };
 export type SystemConfigJobDto = {
     backgroundTask: JobSettingsDto;
+    classification: JobSettingsDto;
     editor: JobSettingsDto;
     faceDetection: JobSettingsDto;
     library: JobSettingsDto;
@@ -2511,6 +2523,17 @@ export type MachineLearningAvailabilityChecksDto = {
     enabled: boolean;
     interval: number;
     timeout: number;
+};
+export type ClassificationConfig = {
+    categories: string[];
+    /** Whether the task is enabled */
+    enabled: boolean;
+    /** Maximum number of classification results */
+    maxResults: number;
+    /** Minimum confidence score for classification */
+    minScore: number;
+    /** Name of the model to use */
+    modelName: string;
 };
 export type ClipConfig = {
     /** Whether the task is enabled */
@@ -2550,6 +2573,7 @@ export type OcrConfig = {
 };
 export type SystemConfigMachineLearningDto = {
     availabilityChecks: MachineLearningAvailabilityChecksDto;
+    classification: ClassificationConfig;
     clip: ClipConfig;
     duplicateDetection: DuplicateDetectionConfig;
     /** Enabled */
@@ -4466,6 +4490,30 @@ export function validateAccessToken(opts?: Oazapfts.RequestOpts) {
     }>("/auth/validateToken", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Get category summaries
+ */
+export function getCategorySummaries(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CategorySummaryResponseDto[];
+    }>("/categories", {
+        ...opts
+    }));
+}
+/**
+ * Get asset categories
+ */
+export function getAssetCategories({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetCategoryResponseDto[];
+    }>(`/categories/asset/${encodeURIComponent(id)}`, {
+        ...opts
     }));
 }
 /**
@@ -7123,6 +7171,7 @@ export enum QueueName {
     Notifications = "notifications",
     BackupDatabase = "backupDatabase",
     Ocr = "ocr",
+    Classification = "classification",
     Workflow = "workflow",
     Editor = "editor"
 }
@@ -7218,6 +7267,8 @@ export enum JobName {
     VersionCheck = "VersionCheck",
     OcrQueueAll = "OcrQueueAll",
     Ocr = "Ocr",
+    ClassificationQueueAll = "ClassificationQueueAll",
+    Classification = "Classification",
     WorkflowRun = "WorkflowRun"
 }
 export enum SearchSuggestionType {
