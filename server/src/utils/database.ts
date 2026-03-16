@@ -1,17 +1,17 @@
 import { createPostgres, DatabaseConnectionParams } from '@immich/sql-tools';
 import {
-  AliasedRawBuilder,
-  DeduplicateJoinsPlugin,
-  Expression,
-  ExpressionBuilder,
-  ExpressionWrapper,
-  Kysely,
-  KyselyConfig,
-  Nullable,
-  Selectable,
-  SelectQueryBuilder,
-  Simplify,
-  sql,
+    AliasedRawBuilder,
+    DeduplicateJoinsPlugin,
+    Expression,
+    ExpressionBuilder,
+    ExpressionWrapper,
+    Kysely,
+    KyselyConfig,
+    Nullable,
+    Selectable,
+    SelectQueryBuilder,
+    Simplify,
+    sql,
 } from 'kysely';
 import { PostgresJSDialect } from 'kysely-postgres-js';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
@@ -344,6 +344,11 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       qb
         .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
         .where('asset_exif.country', options.country === null ? 'is' : '=', options.country!),
+    )
+    .$if(!!options.category, (qb) =>
+      qb
+        .innerJoin('asset_categories', 'asset.id', 'asset_categories.assetId')
+        .where('asset_categories.categoryName', '=', options.category!),
     )
     .$if(options.make !== undefined, (qb) =>
       qb

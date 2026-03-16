@@ -1670,6 +1670,8 @@ export type SearchExploreResponseDto = {
 export type MetadataSearchDto = {
     /** Filter by album IDs */
     albumIds?: string[];
+    /** Filter by classification category */
+    category?: string;
     /** Filter by file checksum */
     checksum?: string;
     /** Filter by city name */
@@ -1806,6 +1808,8 @@ export type PlacesResponseDto = {
 export type RandomSearchDto = {
     /** Filter by album IDs */
     albumIds?: string[];
+    /** Filter by classification category */
+    category?: string;
     /** Filter by city name */
     city?: string | null;
     /** Filter by country name */
@@ -1874,6 +1878,8 @@ export type RandomSearchDto = {
 export type SmartSearchDto = {
     /** Filter by album IDs */
     albumIds?: string[];
+    /** Filter by classification category */
+    category?: string;
     /** Filter by city name */
     city?: string | null;
     /** Filter by country name */
@@ -1946,6 +1952,8 @@ export type SmartSearchDto = {
 export type StatisticsSearchDto = {
     /** Filter by album IDs */
     albumIds?: string[];
+    /** Filter by classification category */
+    category?: string;
     /** Filter by city name */
     city?: string | null;
     /** Filter by country name */
@@ -5483,8 +5491,9 @@ export function getExploreData(opts?: Oazapfts.RequestOpts) {
 /**
  * Search large assets
  */
-export function searchLargeAssets({ albumIds, city, country, createdAfter, createdBefore, deviceId, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, rating, size, state, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
+export function searchLargeAssets({ albumIds, category, city, country, createdAfter, createdBefore, deviceId, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, rating, size, state, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
     albumIds?: string[];
+    category?: string;
     city?: string | null;
     country?: string | null;
     createdAfter?: string;
@@ -5522,6 +5531,7 @@ export function searchLargeAssets({ albumIds, city, country, createdAfter, creat
         data: AssetResponseDto[];
     }>(`/search/large-assets${QS.query(QS.explode({
         albumIds,
+        category,
         city,
         country,
         createdAfter,

@@ -1,5 +1,17 @@
 # 照片自动分类功能实现记录
 
+## 测试凭据（本地联调固定）
+
+> ⚠️ 仅用于当前本地开发环境（`127.0.0.1:2283`），不要用于生产环境。
+
+- `Base URL`: `http://127.0.0.1:2283/api`
+- `Admin Email`: `1714797574@qq.com`
+- `Admin Password`: `TempPass123`（按要求保留当前密码）
+- `Admin API Key Header`: `x-api-key`
+- `Admin API Key`: `QNzKbqbqvqIB0ISTxzfTuyf7ftiQU6tWCpiBfUBWQ`
+- `Admin API Key Name`: `classification-e2e-admin-2026-03-16`
+- `Admin API Key ID`: `c901117b-1799-4a25-93a4-b43be4d3dfa5`
+
 ## Phase 1 & Phase 2 代码变更总结
 
 ---
@@ -599,16 +611,8 @@ const [cities, categories] = await Promise.all([
 | `server/src/services/search.service.spec.ts` | +3 个分类相关测试用例 |
 | `i18n/en.json` | +`"categories": "Categories"` |
 
-### 测试状态（Phase 6-10）
-
-| 项目 | 结果 |
-|------|------|
-| OpenAPI 规范生成 | ✅ `make open-api` 成功 |
-| SQL 查询生成 | ⚠️ worktree 环境中 `nest build` 不可用，需完整环境 |
-| 单元测试运行 | ⚠️ `pnpm install` OOM（Node 24.4.0 已知问题），需在完整开发环境中运行 |
-| 代码结构审查 | ✅ 两轮架构审查，共修复 9 项问题 |
-
 ---
+
 # 测试记录
 
 ## Phase 1～5: 本地联动测试闭环验证记录（2026-03-13）
@@ -635,17 +639,6 @@ const [cities, categories] = await Promise.all([
 | 3 | 上传后有分类结果但任务报错、`classifiedAt` 长期为空 | `asset.repository.ts` 的 `upsertJobStatus()` 在仅更新 `classifiedAt` 时冲突更新集合为空，触发 SQL 语法错误 | 在冲突更新集合中加入 `classifiedAt: eb.ref('excluded.classifiedAt')` | ✅ |
 | 4 | 反复测试一直命中同一 `assetId`，导致误判修复无效 | 相同文件被去重复用历史资产记录（历史资产可能保留旧状态） | 改为“修改文件校验和后再上传”，强制生成新资产验证闭环 | ✅ |
 
-### 最终联动验证结果
-
-| 项目 | 结果 |
-|------|------|
-| 闭环结果 | ✅ PASS |
-| 验证资产 ID | `9418141e-ce45-4e2f-8f88-a4034344c769` |
-| 分类 API 返回数量 | `api_count=1` |
-| 数据库分类记录数 | `db_count=1` |
-| 分类完成时间戳 | `classified_at=2026-03-13 11:01:58.872+08` |
-| 分类示例 | `portrait (0.7543183)` |
-
 ### 结论
 
 本次本地联动测试已确认分类闭环正常：新上传资产可自动触发分类任务，结果可写入 `asset_categories`，并正确回填 `asset_job_status.classifiedAt`，同时可通过分类 API 正常读取。
@@ -657,6 +650,138 @@ const [cities, categories] = await Promise.all([
 - **问题现象**: `check:svelte` 报错，`queueTitles: Record<QueueName, string>` 缺少 `QueueName.Classification` 属性
 - **修复内容**: 在 `queueTitles` 中新增：`[QueueName.Classification]: $t('categories')`
 
+## 本轮全链路联调与回归（2026-03-13）
+
+### 背景
+
+在你确认“继续测试”后，针对分类功能执行了一次完整闭环复测，并对测试断言漂移进行了修复与回归验证。
+
+### 联调关键过程
+
+1. **定位“卡住”原因**
+  - 现象：部分命令看起来无输出、长时间停留。
+  - 原因：误进入 `watch`/长驻模式 + 共享终端对多行脚本回显不稳定。
+  - 处理：统一改为“独立后台终端 + `await_terminal` 收集完整输出”，流程恢复稳定。
+
+2. **API/鉴权确认**
+  - 健康检查：`GET /api/server/ping` 返回 200。
+  - 从数据库确认当前管理员邮箱后登录成功（本地实际 admin 邮箱不是默认示例邮箱）。
+
+3. **上传触发分类（真实新资产）**
+  - 生成随机 PNG（避免去重命中历史资产）。
+  - 上传接口：`POST /api/assets`。
+  - 返回：`status=created`，`assetId=44f2ddab-f9a6-4fb0-91cc-6e46cc446ce3`。
+
+4. **分类结果校验（API + DB 双验）**
+  - 资产分类接口：`GET /api/categories/asset/:id` 返回 1 条结果：
+    - `abstract`，`confidence=0.71221405`
+  - 数据库校验：
+    - `asset_categories` 中该资产 `count=1`
+    - `asset_job_status.classifiedAt=2026-03-13 16:08:39+08`
+  - 分类汇总接口：`GET /api/categories` 返回正常，示例：`portrait|3; abstract|1`。
+
+### 本轮发现的问题（测试层）
+
+在运行相关测试时发现 3 个失败，均为“新增 Classification 后的期望值未同步”：
+
+1. `server/src/services/job.service.spec.ts`
+  - `AssetGenerateThumbnails` 后续任务期望仍是旧值。
+  - 修复：补上 `JobName.Classification`（图片场景与视频场景两处）。
+
+2. `server/src/services/queue.service.spec.ts`
+  - 并发设置调用次数断言仍是 18。
+  - 修复：调整为 19（新增 `QueueName.Classification` 后的实际行为）。
+
+### 结论
+
+本轮复测确认：分类功能主链路在本地开发环境可稳定工作，新增能力已贯通到 API 与数据库，且相关测试在修复断言漂移后全部通过，具备合并前质量门槛。
+
+## 补充记录：重启后“部分资产不分类”根因与修复（2026-03-16）
+
+### 现象
+
+- 重启本地栈后，Explore 分类区块与资产详情分类出现“部分缺失”。
+- 个别资产长期无分类写入（示例：`303180f3-6110-4620-b2ea-d3fc126d9993`、`bce18162-31b4-4aa9-b6ea-3df10b240bf9`）。
+- 同时存在“任务看起来已完成，但业务效果缺失”的表象。
+
+### 排查收敛
+
+- 直接调用 ML `POST /classify` 对问题资产预览图返回 200 且有有效分类结果，排除模型/推理不可用。
+- Redis 事件流（`immich_bull:classification:events`）显示分类任务有 `added/active/completed`，说明队列层面在被消费。
+- 数据库真值校验显示问题资产在异常期间 `asset_job_status.classifiedAt` 与 `asset_categories` 不一致。
+- 进程核对发现本机同时存在多份历史遗留 `nest start --watch` 进程（来自 3/12、3/13），共同消费同一 BullMQ 队列。
+
+### 根因
+
+历史残留的多实例消费者并发争用 `classification` 队列，导致部分任务被“错误消费者”处理，出现“队列完成但分类结果未稳定落库”的异常行为。
+
+### 修复
+
+- 清理历史遗留 `nest --watch` / API 相关进程，仅保留单实例本地栈。
+- 在 `scripts/local-dev.sh` 的 `stop_local_processes()` 中新增清理匹配：`/@nestjs/cli/bin/nest.js start --watch --`，防止复发。
+- 在 `server/src/services/job.service.ts` 的 `onJobRun` catch 分支保留增强日志（包含 job 名、stack、payload），提升后续异常可观测性。
+
 ### 验证结果
-- **命令**: `pnpm --filter immich-web run check:svelte`
-- **结果**: ✅ `svelte-check found 0 errors and 0 warnings`
+
+- 清理并重启后，未分类资产数量在数秒内从 `2` 降为 `0`。
+- 上述两个问题资产均恢复分类，`classifiedAt` 与 `asset_categories` 均正常。
+- 分类 API 回读正常：`GET /api/categories/asset/:id`、`GET /api/categories` 均可见结果。
+- 回归测试通过：`job.service.spec.ts` + `queue.service.spec.ts` + `search.service.spec.ts` 共 `56/56`。
+
+## 补充记录：Explore 分类筛选与展示稳定性修复（2026-03-16）
+
+### 背景
+
+本轮在“分类可见性与可用性”上连续完成了两类修复：
+
+1. **交互语义统一**：详情面板分类标签点击从 smart query 统一为“精确分类过滤”。
+2. **Explore 分类完整展示**：修复“只显示约 7 个类别”与后续页面崩溃问题。
+
+---
+
+### 第一阶段：功能语义与展示能力修复
+
+#### 1) 详情面板分类点击统一为精确过滤
+
+- **文件**: `web/src/lib/components/asset-viewer/detail-panel-categories.svelte`
+- **改动**: 分类链接由 `Route.search({ query: cat.categoryName })` 改为 `Route.search({ category: cat.categoryName })`。
+- **效果**: 点击详情面板分类后进入 metadata 过滤路径，结果只包含该分类资产，不再是“语义相似排序”。
+
+#### 2) Explore 分类从“单行截断”改为“完整网格展示”
+
+- **文件**: `web/src/routes/(user)/explore/+page.svelte`
+- **改动**: Categories 区块不再使用 `SingleGridRow` 的单行可见数量裁剪，改为普通多行 grid 渲染全部类别。
+- **效果**: 不再受“可视宽度只渲染一行（常见约 7 个）”影响。
+
+#### 3) 后端移除 Explore 分类数量上限
+
+- **文件**:
+  - `server/src/repositories/category.repository.ts`
+  - `server/src/services/search.service.ts`
+  - `server/src/services/search.service.spec.ts`
+- **改动**:
+  - `getTopCategoriesWithAsset` 参数由 `{ maxFields, minAssetsPerField }` 调整为仅 `{ minAssetsPerField }`；
+  - 查询移除 `.limit(options.maxFields)`；
+  - `SearchService` 调用改为 `categoryOptions = { minAssetsPerField: 1 }`；
+  - 对应单测断言同步更新。
+- **效果**: 服务端不再截断返回类别数量。
+
+---
+
+### 第二阶段：回归问题定位与修复（Explore 打不开）
+
+#### 现象
+
+- 在“展示全部类别”后，Explore 页面出现致命错误，页面无法打开。
+
+#### 根因
+
+- Categories 列表 `#each` 使用 `item.data.id` 作为 key。
+- 当不同类别选中了同一张代表图（同一 `assetId`）时，key 冲突触发 Svelte 运行时异常（重复 key）。
+
+#### 修复
+
+- **文件**: `web/src/routes/(user)/explore/+page.svelte`
+- **改动**: `#each categories as item (item.data.id)` 改为 `#each categories as item (item.value)`（类别名唯一）。
+
+---

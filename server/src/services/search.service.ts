@@ -4,19 +4,19 @@ import { AssetMapOptions, AssetResponseDto, MapAsset, mapAsset } from 'src/dtos/
 import { AuthDto } from 'src/dtos/auth.dto';
 import { mapPerson, PersonResponseDto } from 'src/dtos/person.dto';
 import {
-  LargeAssetSearchDto,
-  mapPlaces,
-  MetadataSearchDto,
-  PlacesResponseDto,
-  RandomSearchDto,
-  SearchPeopleDto,
-  SearchPlacesDto,
-  SearchResponseDto,
-  SearchStatisticsResponseDto,
-  SearchSuggestionRequestDto,
-  SearchSuggestionType,
-  SmartSearchDto,
-  StatisticsSearchDto,
+    LargeAssetSearchDto,
+    mapPlaces,
+    MetadataSearchDto,
+    PlacesResponseDto,
+    RandomSearchDto,
+    SearchPeopleDto,
+    SearchPlacesDto,
+    SearchResponseDto,
+    SearchStatisticsResponseDto,
+    SearchSuggestionRequestDto,
+    SearchSuggestionType,
+    SmartSearchDto,
+    StatisticsSearchDto,
 } from 'src/dtos/search.dto';
 import { AssetOrder, AssetVisibility, Permission } from 'src/enum';
 import { BaseService } from 'src/services/base.service';
@@ -39,12 +39,13 @@ export class SearchService extends BaseService {
   }
 
   async getExploreData(auth: AuthDto) {
-    const options = { maxFields: 12, minAssetsPerField: 5 };
+    const cityOptions = { maxFields: 12, minAssetsPerField: 5 };
+    const categoryOptions = { minAssetsPerField: 1 };
     const emptyResult = { fieldName: 'category' as const, items: [] as { value: string; data: string }[] };
 
     const [cities, categories] = await Promise.all([
-      this.assetRepository.getAssetIdByCity(auth.user.id, options),
-      this.categoryRepository.getTopCategoriesWithAsset(auth.user.id, options).catch((error) => {
+      this.assetRepository.getAssetIdByCity(auth.user.id, cityOptions),
+      this.categoryRepository.getTopCategoriesWithAsset(auth.user.id, categoryOptions).catch((error) => {
         this.logger.warn(`Failed to get categories for explore page: ${error}`);
         return emptyResult;
       }),

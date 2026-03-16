@@ -160,6 +160,7 @@ stop_local_processes() {
   stop_matching 'pnpm --filter immich run start:dev'
   stop_matching 'vite dev --host 0.0.0.0 --port 3000'
   stop_matching 'nest start --watch --'
+  stop_matching '/@nestjs/cli/bin/nest.js start --watch --'
 
   stop_port "$ML_PORT"
   stop_port "$WEB_PORT"

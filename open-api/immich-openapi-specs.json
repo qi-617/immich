@@ -9346,6 +9346,15 @@
             }
           },
           {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "description": "Filter by classification category",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "city",
             "required": false,
             "in": "query",
@@ -19109,6 +19118,10 @@
             },
             "type": "array"
           },
+          "category": {
+            "description": "Filter by classification category",
+            "type": "string"
+          },
           "checksum": {
             "description": "Filter by file checksum",
             "type": "string"
@@ -20904,6 +20917,10 @@
             },
             "type": "array"
           },
+          "category": {
+            "description": "Filter by classification category",
+            "type": "string"
+          },
           "city": {
             "description": "Filter by city name",
             "nullable": true,
@@ -22277,6 +22294,10 @@
             },
             "type": "array"
           },
+          "category": {
+            "description": "Filter by classification category",
+            "type": "string"
+          },
           "city": {
             "description": "Filter by city name",
             "nullable": true,
@@ -22541,6 +22562,10 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "category": {
+            "description": "Filter by classification category",
+            "type": "string"
           },
           "city": {
             "description": "Filter by city name",

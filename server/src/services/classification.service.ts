@@ -13,6 +13,7 @@ export class ClassificationService extends BaseService {
   async handleQueueClassification({ force }: JobOf<JobName.ClassificationQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isClassificationEnabled(machineLearning)) {
+      this.logger.debug('Skipping ClassificationQueueAll: classification is disabled');
       return JobStatus.Skipped;
     }
 
@@ -20,11 +21,13 @@ export class ClassificationService extends BaseService {
       await this.categoryRepository.deleteAll();
     }
 
+    let queued = 0;
     let jobs: JobItem[] = [];
     const assets = this.assetJobRepository.streamForClassificationJob(force);
 
     for await (const asset of assets) {
       jobs.push({ name: JobName.Classification, data: { id: asset.id } });
+      queued++;
 
       if (jobs.length >= JOBS_ASSET_PAGINATION_SIZE) {
         await this.jobRepository.queueAll(jobs);
@@ -33,6 +36,7 @@ export class ClassificationService extends BaseService {
     }
 
     await this.jobRepository.queueAll(jobs);
+    this.logger.debug(`Queued ${queued} assets for classification`);
     return JobStatus.Success;
   }
 
@@ -40,15 +44,23 @@ export class ClassificationService extends BaseService {
   async handleClassification({ id }: JobOf<JobName.Classification>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isClassificationEnabled(machineLearning)) {
+      this.logger.debug(`Skipping classification for asset ${id}: classification is disabled`);
       return JobStatus.Skipped;
     }
 
     const asset = await this.assetJobRepository.getForClassification(id);
-    if (!asset || !asset.previewFile) {
+    if (!asset) {
+      this.logger.debug(`Failed classification for asset ${id}: asset not found`);
+      return JobStatus.Failed;
+    }
+
+    if (!asset.previewFile) {
+      this.logger.debug(`Failed classification for asset ${id}: preview file not found`);
       return JobStatus.Failed;
     }
 
     if (asset.visibility === AssetVisibility.Hidden) {
+      this.logger.debug(`Skipping classification for asset ${id}: asset is hidden`);
       return JobStatus.Skipped;
     }
 

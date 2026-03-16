@@ -181,6 +181,7 @@
       type: $t('media_type'),
       query: $t('context'),
       city: $t('city'),
+      category: $t('categories'),
       country: $t('country'),
       state: $t('state'),
       make: $t('camera_brand'),

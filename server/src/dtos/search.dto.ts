@@ -76,6 +76,9 @@ class BaseSearchDto {
   @Optional({ nullable: true, emptyToNull: true })
   country?: string | null;
 
+  @ValidateString({ optional: true, trim: true, description: 'Filter by classification category' })
+  category?: string;
+
   @ApiPropertyOptional({ description: 'Filter by camera make' })
   @IsString()
   @Optional({ nullable: true, emptyToNull: true })

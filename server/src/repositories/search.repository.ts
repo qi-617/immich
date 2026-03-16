@@ -69,6 +69,7 @@ export interface SearchPathOptions {
 }
 
 export interface SearchExifOptions {
+  category?: string;
   city?: string | null;
   country?: string | null;
   lensModel?: string | null;

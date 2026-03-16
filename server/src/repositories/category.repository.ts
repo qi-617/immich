@@ -50,8 +50,8 @@ export class CategoryRepository {
     });
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, { maxFields: 12, minAssetsPerField: 5 }] })
-  async getTopCategoriesWithAsset(userId: string, options: { maxFields: number; minAssetsPerField: number }) {
+  @GenerateSql({ params: [DummyValue.UUID, { minAssetsPerField: 5 }] })
+  async getTopCategoriesWithAsset(userId: string, options: { minAssetsPerField: number }) {
     const items = await this.db
       .with('top_cats', (qb) =>
         qb
@@ -75,7 +75,6 @@ export class CategoryRepository {
       .where('asset.type', '=', AssetType.Image)
       .orderBy('asset_categories.categoryName')
       .orderBy('asset_categories.confidence', 'desc')
-      .limit(options.maxFields)
       .execute();
 
     return { fieldName: 'category', items };

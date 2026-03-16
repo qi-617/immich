@@ -113,26 +113,24 @@
       <div class="flex justify-between">
         <p class="mb-4 font-medium dark:text-immich-dark-fg">{$t('categories')}</p>
       </div>
-      <SingleGridRow class="grid grid-flow-col md:grid-auto-fill-36 grid-auto-fill-28 gap-x-4">
-        {#snippet children({ itemCount })}
-          {#each categories.slice(0, itemCount) as item (item.data.id)}
-            <a class="relative" href={Route.search({ query: item.value })} draggable="false">
-              <div class="flex justify-center overflow-hidden rounded-xl brightness-75 filter">
-                <img
-                  src={getAssetMediaUrl({ id: item.data.id, size: AssetMediaSize.Thumbnail })}
-                  alt={item.value}
-                  class="object-cover aspect-square w-full"
-                />
-              </div>
-              <span
-                class="absolute bottom-2 w-full text-ellipsis px-1 text-center text-sm font-medium capitalize text-white backdrop-blur-[1px] hover:cursor-pointer"
-              >
-                {item.value}
-              </span>
-            </a>
-          {/each}
-        {/snippet}
-      </SingleGridRow>
+      <div class="grid md:grid-auto-fill-36 grid-auto-fill-28 gap-x-4 gap-y-4">
+        {#each categories as item (item.value)}
+          <a class="relative" href={Route.search({ category: item.value })} draggable="false">
+            <div class="flex justify-center overflow-hidden rounded-xl brightness-75 filter">
+              <img
+                src={getAssetMediaUrl({ id: item.data.id, size: AssetMediaSize.Thumbnail })}
+                alt={item.value}
+                class="object-cover aspect-square w-full"
+              />
+            </div>
+            <span
+              class="absolute bottom-2 w-full text-ellipsis px-1 text-center text-sm font-medium capitalize text-white backdrop-blur-[1px] hover:cursor-pointer"
+            >
+              {item.value}
+            </span>
+          </a>
+        {/each}
+      </div>
     </div>
   {/if}
 

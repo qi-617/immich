@@ -56,6 +56,7 @@ export class JobService extends BaseService {
         await this.onDone(job);
       }
     } catch (error: Error | any) {
+      this.logger.error(`Failed to run job handler (${job.name}): ${error}`, error?.stack, JSON.stringify(job.data));
       await this.eventRepository.emit('JobError', { job, error });
     } finally {
       await this.eventRepository.emit('JobComplete', queueName, job);

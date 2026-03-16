@@ -103,6 +103,14 @@ describe(SearchService.name, () => {
 
       const result = await sut.getExploreData(auth);
 
+      expect(mocks.asset.getAssetIdByCity).toHaveBeenCalledWith(auth.user.id, {
+        maxFields: 12,
+        minAssetsPerField: 5,
+      });
+      expect(mocks.category.getTopCategoriesWithAsset).toHaveBeenCalledWith(auth.user.id, {
+        minAssetsPerField: 1,
+      });
+
       expect(result).toEqual([
         { fieldName: 'exifInfo.city', items: [{ value: 'city', data: mapAsset(cityAsset) }] },
         { fieldName: 'category', items: [{ value: 'landscape', data: mapAsset(catAsset) }] },

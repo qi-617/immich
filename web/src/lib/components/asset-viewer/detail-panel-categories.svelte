@@ -12,25 +12,77 @@
   let { asset }: Props = $props();
 
   let categories = $state<AssetCategoryResponseDto[]>([]);
+  let loadedAssetId = $state<string | null>(null);
+  const initialPollIntervalMs = 1500;
+  const maxPollIntervalMs = 10_000;
+  const maxPollDurationMs = 10 * 60 * 1000;
 
   $effect(() => {
     const assetId = asset.id;
-    let cancelled = false;
+    const isNewAsset = loadedAssetId !== assetId;
 
-    getAssetCategories({ id: assetId })
-      .then((result) => {
-        if (!cancelled) {
-          categories = result;
+    if (isNewAsset) {
+      categories = [];
+      loadedAssetId = assetId;
+    }
+
+    if (!isNewAsset && categories.length > 0) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    let pollIntervalMs = initialPollIntervalMs;
+
+    const shouldRetry = () => {
+      if (Date.now() - startedAt >= maxPollDurationMs) {
+        return false;
+      }
+
+      return true;
+    };
+
+    const scheduleRetry = () => {
+      if (!shouldRetry()) {
+        return;
+      }
+
+      timeoutId = setTimeout(() => {
+        pollIntervalMs = Math.min(maxPollIntervalMs, Math.round(pollIntervalMs * 1.5));
+        void fetchCategories();
+      }, pollIntervalMs);
+    };
+
+    const fetchCategories = async () => {
+      try {
+        const result = await getAssetCategories({ id: assetId });
+
+        if (cancelled || loadedAssetId !== assetId) {
+          return;
         }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          categories = [];
+
+        categories = result;
+
+        if (result.length === 0) {
+          scheduleRetry();
         }
-      });
+      } catch {
+        if (cancelled || loadedAssetId !== assetId) {
+          return;
+        }
+
+        scheduleRetry();
+      }
+    };
+
+    void fetchCategories();
 
     return () => {
       cancelled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     };
   });
 </script>
@@ -45,7 +97,7 @@
         {#each categories as cat (cat.id)}
           <Badge size="small" shape="round">
             <Link
-              href={Route.search({ query: cat.categoryName })}
+              href={Route.search({ category: cat.categoryName })}
               class="text-light no-underline rounded-full hover:bg-primary-400 px-2"
             >
               {cat.categoryName}
