@@ -90,7 +90,14 @@ run_as_postgres() {
 
 listener_pids() {
   local port="$1"
-  ss -ltnp "( sport = :${port} )" 2>/dev/null | grep -o 'pid=[0-9]\+' | cut -d= -f2 | sort -u
+  local output=''
+
+  output="$(ss -H -ltnp "( sport = :${port} )" 2>/dev/null || true)"
+  if [[ -z "$output" ]]; then
+    output="$(ss -H -ltnp 2>/dev/null | awk -v p="$port" '$4 ~ ":" p "$"')"
+  fi
+
+  printf '%s\n' "$output" | grep -o 'pid=[0-9]\+' | cut -d= -f2 | sort -u
 }
 
 stop_pidfile() {
@@ -156,6 +163,8 @@ stop_local_processes() {
   fi
 
   stop_matching "$ROOT_DIR/machine-learning/.venv/bin/python -m immich_ml"
+  stop_matching 'gunicorn immich_ml.main:app'
+  stop_matching 'immich_ml.config.CustomUvicornWorker'
   stop_matching 'pnpm --filter immich-web run dev'
   stop_matching 'pnpm --filter immich run start:dev'
   stop_matching 'vite dev --host 0.0.0.0 --port 3000'
@@ -172,6 +181,7 @@ wait_for_http() {
   local url="$2"
   local expected="$3"
   local attempts="${4:-120}"
+  local logfile="${5:-}"
   local response=''
 
   for ((i = 1; i <= attempts; i++)); do
@@ -183,6 +193,11 @@ wait_for_http() {
 
     sleep 1
   done
+
+  if [[ -n "$logfile" && -f "$logfile" ]]; then
+    log "Last lines from ${logfile}:"
+    tail -n 40 "$logfile" | sed 's/^/[local-dev]   /' >&2 || true
+  fi
 
   die "${name} did not become ready. Check logs in ${LOG_DIR}."
 }
@@ -323,7 +338,7 @@ export MACHINE_LEARNING_CACHE_FOLDER='$MODEL_CACHE_DIR'
 exec '$ROOT_DIR/machine-learning/.venv/bin/python' -m immich_ml
 "
 
-  wait_for_http 'Machine-learning service' "$ML_URL/ping" 'pong' 120
+  wait_for_http 'Machine-learning service' "$ML_URL/ping" 'pong' 120 "$LOG_DIR/ml.log"
 }
 
 start_api() {
@@ -349,7 +364,7 @@ export IMMICH_MACHINE_LEARNING_URL='$ML_URL'
 exec pnpm --filter immich run start:dev
 "
 
-  wait_for_http 'API server' "$API_URL/api/server/ping" 'pong' 180
+  wait_for_http 'API server' "$API_URL/api/server/ping" 'pong' 180 "$LOG_DIR/api.log"
 }
 
 start_web() {
@@ -362,7 +377,7 @@ export IMMICH_SERVER_URL='$API_URL/'
 exec pnpm --filter immich-web run dev
 "
 
-  wait_for_http 'Web frontend' "$WEB_URL/api/server/ping" 'pong' 90
+  wait_for_http 'Web frontend' "$WEB_URL/api/server/ping" 'pong' 90 "$LOG_DIR/web.log"
 }
 
 status() {
