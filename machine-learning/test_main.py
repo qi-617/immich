@@ -22,6 +22,7 @@ from immich_ml.config import MaxBatchSize, Settings, settings
 from immich_ml.main import load, preload_models
 from immich_ml.models.base import InferenceModel
 from immich_ml.models.cache import ModelCache
+from immich_ml.models.classification.yolo import YoloClassificationModel, _to_probabilities
 from immich_ml.models.clip.textual import MClipTextualEncoder, OpenClipTextualEncoder
 from immich_ml.models.clip.visual import OpenClipVisualEncoder
 from immich_ml.models.facial_recognition.detection import FaceDetector
@@ -521,6 +522,7 @@ class TestCLIP:
         assert len(embedding) == clip_model_cfg["embed_dim"]
         mocked.run.assert_called_once()
 
+
     def test_basic_text(
         self,
         mocker: MockerFixture,
@@ -703,6 +705,75 @@ class TestCLIP:
         assert tokens["attention_mask"].shape == (1, 77)
         assert np.allclose(tokens["input_ids"], np.array([mock_ids], dtype=np.int32), atol=0)
         assert np.allclose(tokens["attention_mask"], np.array([mock_attention_mask], dtype=np.int32), atol=0)
+
+
+class TestClassification:
+    def test_yolo_classifier_predict(self, pil_image: Image.Image, tmp_path: Path, mocker: MockerFixture) -> None:
+        (tmp_path / "labels.txt").write_text("portrait\nlandscape\n")
+        session = mocker.MagicMock()
+        session.get_inputs.return_value = [SimpleNamespace(name="images", shape=[1, 3, 224, 224])]
+        session.run.return_value = [np.array([[0.2, 0.8]], dtype=np.float32)]
+        mocker.patch("immich_ml.models.classification.yolo.OrtSession", return_value=session)
+        mocker.patch.object(YoloClassificationModel, "download")
+
+        classifier = YoloClassificationModel("YOLO26l-cls", cache_dir=tmp_path)
+        result = classifier.predict(pil_image)
+
+        assert result["portrait"] == pytest.approx(0.2)
+        assert result["landscape"] == pytest.approx(0.8)
+        session.run.assert_called_once()
+
+    def test_to_probabilities_applies_softmax_for_logits(self) -> None:
+        probabilities = _to_probabilities(np.array([[1.0, 3.0]], dtype=np.float32))
+
+        assert np.isclose(float(probabilities.sum()), 1.0)
+        assert probabilities[1] > probabilities[0]
+
+    def test_classify_endpoint_filters_scores(
+        self,
+        deployed_app: TestClient,
+        pil_image: Image.Image,
+        mocker: MockerFixture,
+    ) -> None:
+        async def mock_scores(model_name: str, image: Image.Image) -> dict[str, float]:
+            assert model_name == "YOLO26l-cls"
+            assert image.size == pil_image.size
+            return {"portrait": 0.91, "landscape": 0.81, "animal": 0.1}
+
+        mocker.patch("immich_ml.main._get_classification_scores", side_effect=mock_scores)
+        image_bytes = BytesIO()
+        pil_image.save(image_bytes, format="JPEG")
+
+        response = deployed_app.post(
+            "/classify",
+            files={"image": ("test.jpg", image_bytes.getvalue(), "image/jpeg")},
+            data={
+                "model_name": "YOLO26l-cls",
+                "categories": json.dumps(["landscape", "portrait", "food"]),
+                "min_score": "0.5",
+                "max_results": "1",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"classification": [{"categoryName": "portrait", "confidence": 0.91}]}
+
+    def test_classify_endpoint_rejects_invalid_categories(
+        self,
+        deployed_app: TestClient,
+        pil_image: Image.Image,
+    ) -> None:
+        image_bytes = BytesIO()
+        pil_image.save(image_bytes, format="JPEG")
+
+        response = deployed_app.post(
+            "/classify",
+            files={"image": ("test.jpg", image_bytes.getvalue(), "image/jpeg")},
+            data={"categories": "not-json"},
+        )
+
+        assert response.status_code == 422
+        assert "Invalid categories JSON" in response.json()["detail"]
 
 
 class TestFaceRecognition:

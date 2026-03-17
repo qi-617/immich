@@ -32,4 +32,5 @@ vite.config.js.timestamp-*
 .immich-build/
 .local-media/
 machine-learning/.venv/
+model-cache/
 

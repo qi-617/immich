@@ -22,9 +22,10 @@ from starlette.formparsers import MultiPartParser
 
 from immich_ml.models import get_model_deps
 from immich_ml.models.base import InferenceModel
+from immich_ml.models.classification.yolo import YoloClassificationModel
 from immich_ml.models.transforms import decode_pil
 
-from .config import PreloadModelData, log, settings
+from .config import PreloadModelData, clean_name, log, settings
 from .models.cache import ModelCache
 from .schemas import (
     InferenceEntries,
@@ -51,6 +52,7 @@ DEFAULT_CATEGORIES = [
 SOFTMAX_TEMPERATURE = 100.0
 
 model_cache = ModelCache(revalidate=settings.model_ttl > 0)
+classification_model_cache: dict[str, YoloClassificationModel] = {}
 thread_pool: ThreadPoolExecutor | None = None
 lock = threading.Lock()
 active_requests = 0
@@ -82,6 +84,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
         log.handlers.clear()
         for model in model_cache.cache._cache.values():
             del model
+        classification_model_cache.clear()
         if thread_pool is not None:
             thread_pool.shutdown()
         gc.collect()
@@ -208,7 +211,7 @@ async def predict(
 @app.post("/classify", dependencies=[Depends(update_state)])
 async def classify(
     image: bytes = File(),
-    model_name: str = Form(default="ViT-B-32__openai"),
+    model_name: str = Form(default="YOLO26l-cls"),
     categories: str | None = Form(default=None),
     min_score: float = Form(default=0.15),
     max_results: int = Form(default=5),
@@ -216,17 +219,9 @@ async def classify(
     category_list = _parse_categories(categories)
 
     pil_image = await run(lambda: decode_pil(image))
+    label_scores = await _get_classification_scores(model_name, pil_image)
 
-    image_embedding = await _get_image_embedding(model_name, pil_image)
-    text_embeddings = await _get_text_embeddings(model_name, category_list)
-
-    probabilities = _cosine_softmax(image_embedding, np.stack(text_embeddings))
-
-    results = [
-        {"categoryName": category, "confidence": float(probabilities[i])}
-        for i, category in enumerate(category_list)
-        if probabilities[i] >= min_score
-    ]
+    results = _filter_classification_results(label_scores, category_list, min_score)
     results.sort(key=lambda x: x["confidence"], reverse=True)
 
     return ORJSONResponse({"classification": results[:max_results]})
@@ -242,6 +237,38 @@ def _parse_categories(categories: str | None) -> list[str]:
     if not isinstance(parsed, list) or len(parsed) == 0:
         raise HTTPException(422, "Categories must be a non-empty JSON array of strings.")
     return [str(c) for c in parsed]
+
+
+async def _get_classification_scores(model_name: str, pil_image: Image) -> dict[str, float]:
+    classifier = _get_classification_model(model_name)
+    await run(classifier.load)
+    return await run(classifier.predict, pil_image)
+
+
+def _get_classification_model(model_name: str) -> YoloClassificationModel:
+    cache_key = clean_name(model_name)
+    with lock:
+        if cache_key not in classification_model_cache:
+            classification_model_cache[cache_key] = YoloClassificationModel(model_name)
+        return classification_model_cache[cache_key]
+
+
+def _filter_classification_results(
+    label_scores: dict[str, float],
+    category_list: list[str],
+    min_score: float,
+) -> list[dict[str, float | str]]:
+    normalized_scores = {_normalize_category(label): score for label, score in label_scores.items()}
+    results: list[dict[str, float | str]] = []
+    for category in category_list:
+        score = normalized_scores.get(_normalize_category(category))
+        if score is not None and score >= min_score:
+            results.append({"categoryName": category, "confidence": float(score)})
+    return results
+
+
+def _normalize_category(category: str) -> str:
+    return category.strip().casefold()
 
 
 async def _get_image_embedding(model_name: str, pil_image: Image) -> NDArray[np.float32]:

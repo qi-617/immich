@@ -282,7 +282,7 @@ export const defaults = Object.freeze<SystemConfig>({
     },
     classification: {
       enabled: true,
-      modelName: 'ViT-B-32__openai',
+      modelName: 'YOLO26l-cls',
       minScore: 0.15,
       maxResults: 5,
       categories: [

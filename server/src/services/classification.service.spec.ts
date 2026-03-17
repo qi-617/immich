@@ -126,7 +126,7 @@ describe(ClassificationService.name, () => {
       expect(mocks.machineLearning.classifyImage).toHaveBeenCalledWith(
         '/uploads/user-id/thumbs/path.jpg',
         expect.objectContaining({
-          modelName: 'ViT-B-32__openai',
+          modelName: 'YOLO26l-cls',
           minScore: 0.15,
           maxResults: 5,
         }),
@@ -148,7 +148,7 @@ describe(ClassificationService.name, () => {
           enabled: true,
           classification: {
             enabled: true,
-            modelName: 'ViT-L-14__openai',
+            modelName: 'YOLO26l-cls-custom',
             minScore: 0.3,
             maxResults: 3,
             categories: ['portrait', 'landscape', 'food'],
@@ -162,7 +162,7 @@ describe(ClassificationService.name, () => {
       expect(mocks.machineLearning.classifyImage).toHaveBeenCalledWith(
         '/uploads/user-id/thumbs/path.jpg',
         expect.objectContaining({
-          modelName: 'ViT-L-14__openai',
+          modelName: 'YOLO26l-cls-custom',
           minScore: 0.3,
           maxResults: 3,
           categories: ['portrait', 'landscape', 'food'],
